@@ -2351,13 +2351,6 @@ jobs:
 - Securely accesses GitHub secrets
 - Executes the main scraper script
 
-## Security Considerations
-
-### Secret Management
-- Sensitive credentials stored as GitHub secrets
-- Accessed securely during runtime
-- Never exposed in logs or outputs
-
 ### Environment Variables
 - `SUPABASE_URL`: Database endpoint
 - `SUPABASE_KEY`: Authentication key
