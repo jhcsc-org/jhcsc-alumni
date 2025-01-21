@@ -2121,3 +2121,256 @@ grant execute on function update_updated_at_column() to service_role;
 
 grant execute on function update_updated_at_column() to supabase_auth_admin;
 ```
+
+
+
+## JHCSC Web Scraper
+
+This web scraper was developed to automate content synchronization between the JHCSC main website and our alumni portal. The solution implements an asynchronous Python architecture to efficiently extract blog posts from jhcsc.edu.ph and store them in our Supabase database.
+
+The implementation prioritizes reliability through robust error handling, rate limiting, and concurrent request management.
+
+## System Architecture
+
+The following diagram illustrates the core components and their interactions:
+
+```mermaid
+graph TD
+    A[Scraper] -->|Async Requests| B[JHCSC Website]
+    B -->|HTML| C[Parser]
+    C -->|Structured Data| D[Supabase]
+    E[Rate Limiter] -.->|Controls| A
+    F[Error Handler] -.->|Monitors| A
+```
+
+## Core Components
+
+### Configuration Parameters
+
+```python
+CONCURRENT_REQUESTS = 5  # Optimized for server load management
+RETRY_ATTEMPTS = 3      # Maximum retry attempts
+TIMEOUT = ClientTimeout(total=30)  # Request timeout threshold
+```
+
+These parameters have been calibrated through performance testing. The concurrent request limit is particularly critical for maintaining stable server response times.
+
+### Primary Functions
+
+#### HTTP Content Retrieval
+The fetch function implements retry logic to handle network instability:
+
+```python
+@retry(
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    stop=stop_after_attempt(RETRY_ATTEMPTS)
+)
+async def fetch_html(session: ClientSession, url: str) -> Optional[str]:
+    async with session.get(url, headers=HEADERS) as response:
+        response.raise_for_status()
+        return await response.text()
+```
+
+#### Content Parsing
+The parser module handles HTML structure variations and extracts required data fields:
+
+```python
+def parse_post_page(html: str, post_url: str) -> dict:
+    soup = BeautifulSoup(html, 'html.parser')
+    # Systematic extraction of title, author, content
+    # Returns structured data dictionary
+```
+
+Note: BeautifulSoup implementation includes fallback mechanisms for handling inconsistent HTML structures.
+
+## Data Processing Flow
+
+The system follows a structured pipeline:
+1. Main page acquisition
+2. Post link extraction
+3. Concurrent post processing
+4. Data normalization
+5. Batch database insertion
+
+```mermaid
+sequenceDiagram
+    Scraper->>JHCSC: Request Content
+    JHCSC-->>Scraper: Return HTML
+    Scraper->>Parser: Process HTML
+    Parser-->>Scraper: Return Structured Data
+    Scraper->>Supabase: Execute Batch Storage
+```
+
+## Technical Implementation
+
+### Concurrency Management
+Implemented through Python's asyncio with semaphore controls:
+
+```python
+async with asyncio.Semaphore(CONCURRENT_REQUESTS):
+    # Controlled concurrent execution
+```
+
+### Database Operations
+Upsert operations ensure data integrity and prevent duplication:
+
+```python
+response = supabase.table('blog_posts').upsert(
+    posts,
+    on_conflict='post_url'  # URL serves as unique identifier
+)
+```
+
+## Deployment Instructions
+
+Configuration and execution:
+```bash
+# Environment Configuration
+SUPABASE_URL=your_url
+SUPABASE_KEY=your_key
+
+# Execution
+python main.py
+```
+
+## Error Handling
+
+The system implements multiple layers of error management:
+- Network failure recovery through retry mechanisms
+- Data integrity preservation via transaction management
+- Comprehensive error logging
+- Graceful degradation protocols
+
+## Performance Considerations
+
+Production deployment observations:
+- Concurrent request threshold at 5 provides optimal performance
+- Batch database operations significantly reduce transaction overhead
+- Exponential backoff strategy prevents server stress
+
+## Monitoring Implementation
+
+Structured logging provides operational visibility:
+```python
+logger.info(f"Processing page {page_number}")
+logger.error(f"Failed to fetch {url}: {error}")
+```
+
+Log analysis enables performance monitoring and issue identification.
+
+## Dependencies
+
+Required libraries:
+- `aiohttp`: Asynchronous HTTP requests
+- `beautifulsoup4`: HTML parsing
+- `supabase`: Database operations
+- `tenacity`: Retry logic implementation
+- `python-dotenv`: Configuration management
+
+## Automated Scraper Workflow
+
+## Workflow Configuration
+
+```yaml
+name: Run Web Scraper
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours
+  workflow_dispatch:  # Allows manual trigger
+```
+
+### Trigger Mechanisms
+
+1. **Scheduled Execution**
+   - Runs automatically every 6 hours
+   - Cron Expression: `0 */6 * * *`
+   - Schedule Breakdown:
+     - `0`: At minute 0
+     - `*/6`: Every 6th hour
+     - `* * *`: Every day, every month, every day of the week
+
+2. **Manual Trigger**
+   - `workflow_dispatch` enables manual workflow execution
+   - Accessible through GitHub's Actions tab
+   - Useful for testing and immediate data updates
+
+## Job Configuration
+
+```yaml
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+```
+
+### Environment Specifications
+- Executes on latest Ubuntu runner
+- Provides consistent execution environment
+- Ensures dependency compatibility
+
+## Execution Steps
+
+### 1. Repository Setup
+```yaml
+- uses: actions/checkout@v2
+```
+- Clones repository content
+- Provides access to scraper code and dependencies
+
+### 2. Python Environment
+```yaml
+- name: Set up Python
+  uses: actions/setup-python@v2
+  with:
+    python-version: '3.10'
+```
+- Installs Python 3.10
+- Ensures consistent Python environment
+
+### 3. Dependency Installation
+```yaml
+- name: Install dependencies
+  run: |
+    python -m pip install --upgrade pip
+    pip install python-dotenv
+    pip install -r requirements.txt
+```
+- Updates pip to latest version
+- Installs required Python packages
+- Reads dependencies from requirements.txt
+
+### 4. Scraper Execution
+```yaml
+- name: Run scraper
+  env:
+    SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+    SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+  run: python main.py
+```
+- Sets required environment variables
+- Securely accesses GitHub secrets
+- Executes the main scraper script
+
+## Security Considerations
+
+### Secret Management
+- Sensitive credentials stored as GitHub secrets
+- Accessed securely during runtime
+- Never exposed in logs or outputs
+
+### Environment Variables
+- `SUPABASE_URL`: Database endpoint
+- `SUPABASE_KEY`: Authentication key
+- Injected at runtime for secure access
+
+## Workflow Monitoring
+
+### Execution Logs
+- Available in GitHub Actions tab
+- Shows execution status and errors
+- Retains history of previous runs
+
+### Status Checks
+- Success/failure notifications
+- Runtime duration tracking
+- Error reporting and diagnostics
